@@ -2,6 +2,31 @@
 
 set -e -u
 
+<%
+
+def fan_block(index)
+	"10.255.%d.0" % (index+1)
+end
+
+def hw_addr(ip)
+	"0a:00:" + ip.split('.').map { |n| "%02x" % (n.to_i()) }.join(':')
+end
+
+def subnet_key(index)
+	"/flannel/subnets/" + fan_block(index) + "-24"
+end
+
+def etcd_set(index, publicIP)
+   "/var/vcap/packages/etcd/etcdctl set " + subnet_key(index) + " '" +
+        JSON.pretty_generate({
+        "BackendData" => { "VtepMAC" => hw_addr(fan_block(index)) },
+        "PublicIP" => publicIP,
+        "BackendType" => "vxlan",
+        }) + "'"
+end
+
+%>
+
 RUN_DIR=/var/vcap/sys/run/flannel
 LOG_DIR=/var/vcap/sys/log/flannel
 PIDFILE=$RUN_DIR/flanneld.pid
@@ -21,19 +46,18 @@ case $1 in
 
     echo $$ > $PIDFILE
 
-    keyURL=<%= p("cni-flannel.etcd_endpoints")[0] %>/v2/keys/coreos.com/network/config
+    /var/vcap/packages/etcd/etcdctl set /flannel/config '<%=
+          require 'json'
+          JSON.pretty_generate(p("cni-flannel.flannel")) %>'
 
-    curl -v \
-      $keyURL \
-      -XPUT -d value='<%=
-      require 'json'
-      JSON.pretty_generate(p("cni-flannel.flannel")) %>' \
-      1>>$LOG_DIR/flanneld.stdout.log \
-      2>>$LOG_DIR/flanneld.stderr.log
+    <% link("peers").instances.map do |instance| %>
+      <%= etcd_set(instance.index, instance.address) %>
+    <% end %>
 
     exec /var/vcap/packages/flannel/bin/flanneld \
       --log_dir=${LOG_DIR} \
-      --etcd-endpoints=<%= p("cni-flannel.etcd_endpoints").join(",") %> \
+      --etcd-endpoints=http://127.0.0.1:4001 \
+      --etcd-prefix=/flannel \
       2> >(tee -a $LOG_DIR/flanneld.stderr.log | logger -p user.error -t flanneld) \
       1> >(tee -a $LOG_DIR/flanneld.stdout.log | logger -t flanneld)
 
