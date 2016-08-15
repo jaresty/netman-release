@@ -77,3 +77,9 @@
 [submodule "src/code.cloudfoundry.org/garden"]
 	path = src/code.cloudfoundry.org/garden
 	url = https://github.com/cloudfoundry/garden
+[submodule "src/github.com/vishvananda/netlink"]
+	path = src/github.com/vishvananda/netlink
+	url = https://github.com/vishvananda/netlink
+[submodule "src/github.com/vishvananda/netns"]
+	path = src/github.com/vishvananda/netns
+	url = https://github.com/vishvananda/netns
