@@ -15,7 +15,6 @@ type vxlanDeviceAttrs struct {
 	vtepIndex int
 	vtepAddr  net.IP
 	vtepPort  int
-	gbp       bool
 }
 
 type vxlanDevice struct {
@@ -43,7 +42,7 @@ func newVXLANDevice(devAttrs *vxlanDeviceAttrs) (*vxlanDevice, error) {
 		SrcAddr:      devAttrs.vtepAddr,
 		Port:         devAttrs.vtepPort,
 		Learning:     false,
-		GBP:          devAttrs.gbp,
+		GBP:          true,
 	}
 
 	link, err := ensureLink(link)
@@ -149,49 +148,35 @@ func (dev *vxlanDevice) Configure(vtepOverlayIP net.IP, fullOverlayMask net.IPMa
 		IP:   vtepOverlayIP,
 		Mask: fullOverlayMask,
 	}
-	setAddr4(dev.link, addr)
+	dev.setAddr4(addr)
 	netlink.LinkSetHardwareAddr(dev.link, hwAddr)
 
 	if err := netlink.LinkSetUp(dev.link); err != nil {
 		return fmt.Errorf("failed to set interface %s to UP state: %s", dev.link.Attrs().Name, err)
 	}
 
-	// for routing, be sure to fully mask the address
+	if err := dev.PurgeAllRoutes(); err != nil {
+		return err
+	}
+
+	// fully mask the address before adding the wide route
 	routeSubnet := &net.IPNet{
 		IP:   addr.IP.Mask(addr.Mask),
 		Mask: addr.Mask,
 	}
-
-	// explicitly add a route since there might be a route for a subnet already
-	// installed by Docker and then it won't get auto added
-	route := netlink.Route{
-		LinkIndex: dev.link.Attrs().Index,
-		Scope:     netlink.SCOPE_UNIVERSE,
-		Dst:       routeSubnet,
-	}
-	if err := netlink.RouteAdd(&route); err != nil && err != syscall.EEXIST {
-		return fmt.Errorf("failed to add route (%s to %s): %v", addr.String(), dev.link.Attrs().Name, err)
-	}
-
-	return nil
+	return dev.AddRoute(routeSubnet, nil, netlink.SCOPE_LINK, nil)
 }
 
 // sets IP4 addr on link removing any existing ones first
-func setAddr4(link *netlink.Vxlan, ipn *net.IPNet) error {
-	addrs, err := netlink.AddrList(link, syscall.AF_INET)
+func (dev *vxlanDevice) setAddr4(ipn *net.IPNet) error {
+	err := dev.PurgeAllRoutes()
 	if err != nil {
 		return err
 	}
 
-	for _, addr := range addrs {
-		if err = netlink.AddrDel(link, &addr); err != nil {
-			return fmt.Errorf("failed to delete IPv4 addr %s from %s", addr.String(), link.Attrs().Name)
-		}
-	}
-
 	addr := netlink.Addr{IPNet: ipn, Label: ""}
-	if err = netlink.AddrAdd(link, &addr); err != nil {
-		return fmt.Errorf("failed to add IP address %s to %s: %s", ipn.String(), link.Attrs().Name, err)
+	if err = netlink.AddrAdd(dev.link, &addr); err != nil {
+		return fmt.Errorf("failed to add IP address %s to %s: %s", ipn.String(), dev.link.Attrs().Name, err)
 	}
 
 	return nil

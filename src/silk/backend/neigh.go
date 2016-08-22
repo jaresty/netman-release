@@ -43,12 +43,47 @@ func (dev *vxlanDevice) SetL3(n L3Neigh) error {
 	})
 }
 
-func (dev *vxlanDevice) AddRoute(destNet net.IPNet, gateway net.IP) error {
+func (dev *vxlanDevice) AddRoute(destNet *net.IPNet, gateway net.IP, scope netlink.Scope, src net.IP) error {
 	// ip route add 10.255.2.0/24 via 10.255.2.0 dev silk.1
-	return netlink.RouteAdd(&netlink.Route{
+	err := netlink.RouteAdd(&netlink.Route{
 		LinkIndex: dev.link.Index,
-		Scope:     netlink.SCOPE_UNIVERSE,
-		Dst:       &destNet,
+		Scope:     scope,
+		Dst:       destNet,
 		Gw:        gateway,
+		Src:       src,
 	})
+	if err != nil && err != syscall.EEXIST {
+		return fmt.Errorf("ip route add %s via %s dev %s scope %d src %s: %s",
+			destNet.String(), gateway.String(), dev.link.Attrs().Name, scope, src.String(), err)
+	}
+	return nil
+}
+
+func (dev *vxlanDevice) PurgeAllRoutes() error {
+	existingRoutes, err := netlink.RouteList(dev.link, syscall.AF_INET)
+	if err != nil {
+		return fmt.Errorf("listing routes: %s", err)
+	}
+
+	for _, route := range existingRoutes {
+		if err := netlink.RouteDel(&route); err != nil {
+			return fmt.Errorf("removing route: %s", err)
+		}
+	}
+
+	return nil
+}
+
+func (dev *vxlanDevice) PurgeAllAddresses() error {
+	addrs, err := netlink.AddrList(dev.link, syscall.AF_INET)
+	if err != nil {
+		return fmt.Errorf("listing addrs: %s", err)
+	}
+
+	for _, addr := range addrs {
+		if err = netlink.AddrDel(dev.link, &addr); err != nil {
+			return fmt.Errorf("deleting addr %s from %s", addr.String(), dev.link.Attrs().Name)
+		}
+	}
+	return nil
 }

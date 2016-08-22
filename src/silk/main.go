@@ -27,7 +27,9 @@ func main() {
 
 func mainWithError(logger lager.Logger) error {
 	var configFilePath string
+	var runOnce bool
 	flag.StringVar(&configFilePath, "config-file", "", "path to config file")
+	flag.BoolVar(&runOnce, "run-once", false, "run once and then quit.")
 	flag.Parse()
 
 	rawConfig, err := config.ReadFile(configFilePath)
@@ -71,11 +73,15 @@ func mainWithError(logger lager.Logger) error {
 	}
 	logger.Info("configured vxlan device")
 
-	err = controller.InstallRoutes(parsedConfig.RemoteHosts)
+	err = controller.InstallRoutes(parsedConfig.RemoteHosts, parsedConfig.ThisHost.VtepOverlayIP)
 	if err != nil {
 		return fmt.Errorf("installing routes: %s", err)
 	}
 	logger.Info("installed routes")
+
+	if runOnce {
+		return nil
+	}
 
 	upkeep := ifrit.RunFunc(func(sigChan <-chan os.Signal, ready chan<- struct{}) error {
 		close(ready)

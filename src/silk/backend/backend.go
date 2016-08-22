@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"net"
 	"silk/models"
+
+	"github.com/vishvananda/netlink"
 )
 
 type Controller interface {
 	OverlayMTU() int
 	ConfigureDevice(fullOverlay net.IPNet, local *models.NetHost) error
-	InstallRoutes(remoteHosts []*models.NetHost) error
+	InstallRoutes(remoteHosts []*models.NetHost, vtepOverlayIP net.IP) error
 }
 
 type controller struct {
@@ -38,7 +40,6 @@ func New(vni int, port int, externalIP net.IP, externalInterface net.Interface) 
 		vtepIndex: externalInterface.Index,
 		vtepAddr:  externalIP,
 		vtepPort:  port,
-		gbp:       true,
 	}
 
 	dev, err := newVXLANDevice(&devAttrs)
@@ -61,7 +62,7 @@ func (c *controller) ConfigureDevice(fullOverlay net.IPNet, local *models.NetHos
 	return nil
 }
 
-func (c *controller) InstallRoutes(remoteHosts []*models.NetHost) error {
+func (c *controller) InstallRoutes(remoteHosts []*models.NetHost, vtepOverlayIP net.IP) error {
 	for _, host := range remoteHosts {
 		l3neigh := L3Neigh{
 			OverlayIP:  host.VtepOverlayIP,
@@ -79,9 +80,10 @@ func (c *controller) InstallRoutes(remoteHosts []*models.NetHost) error {
 		if err != nil {
 			return fmt.Errorf("set l2: %s", err)
 		}
-		err = c.Device.AddRoute(host.OverlaySubnet, host.OverlaySubnet.IP)
+		err = c.Device.AddRoute(
+			&host.OverlaySubnet, host.OverlaySubnet.IP, netlink.SCOPE_UNIVERSE, vtepOverlayIP)
 		if err != nil {
-			return fmt.Errorf("add route %s: %s", host.OverlaySubnet.String(), err)
+			return err
 		}
 	}
 	return nil
