@@ -4,6 +4,10 @@ templates:
   vxlan-policy-agent_ctl.erb: bin/vxlan-policy-agent_ctl
   vxlan-policy-agent.json.erb: config/vxlan-policy-agent.json
 
+consumes:
+  - name: policy_server
+    type: policy_server
+
 packages:
   - vxlan-policy-agent
 

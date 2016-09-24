@@ -4,6 +4,12 @@ templates:
   policy-server_ctl.erb: bin/policy-server_ctl
   policy-server.json.erb: config/policy-server.json
 
+provides:
+  - name: policy_server
+    type: policy_server
+    properties:
+      policy-server.listen_port
+
 packages:
   - policy-server
 

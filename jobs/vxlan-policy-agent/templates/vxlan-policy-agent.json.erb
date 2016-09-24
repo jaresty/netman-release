@@ -3,5 +3,12 @@
 
     agentConfig = p("vxlan-policy-agent")
 
+    server = link("policy_server")
+    agentConfig.policy_server_url =
+      "http://" +
+      server.instances.first.address +
+      ":" +
+      server.p("policy-server.listen_port")
+
     JSON.pretty_generate(agentConfig)
 %>
