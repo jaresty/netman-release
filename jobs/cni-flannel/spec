@@ -64,6 +64,10 @@ properties:
     description: "file that flannel writes out the subnet environment"
     default: /var/vcap/data/flannel/subnet.env
 
+  cni-flannel.flannel.state_dir:
+    description: "directory where the flannel plugin maintains state"
+    default: /var/vcap/data/cni/flannel
+
   flannel-watchdog.config.bridge_name:
     description: "name of cni bridge on host"
     default: cni-flannel0
